@@ -27,7 +27,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/moodiest/socket.io-mock-ts.git"
+    "url": "git+https://github.com/james-elicx/socket.io-mock-ts.git"
   },
   "keywords": [
     "socket.io",
@@ -39,9 +39,9 @@
   "author": "James",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/moodiest/socket.io-mock-ts/issues"
+    "url": "https://github.com/james-elicx/socket.io-mock-ts/issues"
   },
-  "homepage": "https://github.com/moodiest/socket.io-mock-ts#readme",
+  "homepage": "https://github.com/james-elicx/socket.io-mock-ts#readme",
   "dependencies": {
     "@types/component-emitter": "^1.2.11",
     "component-emitter": "^1.3.0"
@@ -63,5 +63,6 @@
     "vite-plugin-checker": "^0.4.4",
     "vite-plugin-dts": "^1.0.5",
     "vitest": "^0.8.3"
-  }
+  },
+  "packageManager": "yarn@4.13.0"
 }
