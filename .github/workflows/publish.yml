@@ -1,0 +1,118 @@
+name: Publish to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: yarn
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Bump version
+        id: version
+        run: |
+          LATEST=$(npm view socket.io-mock-ts version 2>/dev/null || echo "0.0.0")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
+          case "${{ inputs.bump }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          npm version "$VERSION" --no-git-tag-version
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "previous=${LATEST}" >> "$GITHUB_OUTPUT"
+          echo "Publishing socket.io-mock-ts@${VERSION} (was ${LATEST})"
+
+      - name: Build
+        run: yarn build
+
+      - name: Publish (OIDC trusted publishing)
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: release v${{ steps.version.outputs.version }}"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin HEAD:${{ github.ref_name }} "v${{ steps.version.outputs.version }}"
+
+      - name: Get changes since last version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREV_TAG="v${{ steps.version.outputs.previous }}"
+          FORMAT="%H %s"
+          if git rev-parse "$PREV_TAG" >/dev/null 2>&1; then
+            git log "$PREV_TAG"..HEAD --format="$FORMAT" --no-merges > /tmp/raw-commits.txt
+          else
+            git log --format="$FORMAT" --no-merges -30 > /tmp/raw-commits.txt
+          fi
+          while IFS= read -r line; do
+            SHA=$(echo "$line" | cut -d' ' -f1)
+            SUBJECT=$(echo "$line" | cut -d' ' -f2-)
+            LOGIN=$(gh api "repos/${{ github.repository }}/commits/${SHA}" --jq '.author.login // .commit.author.name' 2>/dev/null || echo "")
+            if [ -n "$LOGIN" ]; then
+              echo "${SHA:0:7} ${SUBJECT} (@${LOGIN})"
+            else
+              echo "${SHA:0:7} ${SUBJECT}"
+            fi
+          done < /tmp/raw-commits.txt > /tmp/commits.txt
+          if [ ! -s /tmp/commits.txt ]; then
+            echo "No commits found since last release." > /tmp/commits.txt
+          fi
+
+      - name: Create GitHub Release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file /tmp/commits.txt \
+            --repo "${{ github.repository }}"
